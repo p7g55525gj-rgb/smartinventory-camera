@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SmartInventory — JANコード読取</title>
+  <style>
+    :root { color: #24322a; font-family: system-ui, -apple-system, sans-serif; }
+    body { max-width: 540px; margin: 0 auto; padding: 24px 18px 40px; background: #f6faf6; }
+    main { padding: 22px; border-radius: 16px; background: #fff; box-shadow: 0 4px 18px #18352218; }
+    h1 { margin: 0; font-size: 1.4rem; } p { color: #526159; line-height: 1.6; }
+    button { width: 100%; margin-top: 12px; padding: 13px; border: 0; border-radius: 9px; background: #23734d; color: #fff; font: inherit; font-weight: 700; }
+    button.secondary { display: none; background: #6b5142; }
+    #scanner { display: none; overflow: hidden; margin-top: 16px; border-radius: 10px; background: #111; }
+    #scanner video, #scanner canvas { width: 100%; height: auto; }
+    #status { min-height: 2em; font-weight: 700; }
+    .note { margin-top: 24px; padding-top: 16px; border-top: 1px solid #dce7de; font-size: .85rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>JANコードを読み取る</h1>
+    <p>カメラの利用を許可し、商品のバーコード全体を映してください。</p>
+    <button id="start" type="button">カメラを起動する</button>
+    <button id="stop" class="secondary" type="button">読み取りをやめる</button>
+    <div id="scanner" aria-label="バーコード読み取りカメラ"></div>
+    <p id="status" role="status">準備ができました。</p>
+    <p class="note">このページはJANコードを読み取るだけです。在庫データやGoogleスプレッドシートにはアクセスしません。</p>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@ericblade/quagga2@1.12.1/dist/quagga.min.js"></script>
+  <script>
+    const scanner = document.getElementById('scanner');
+    const startButton = document.getElementById('start');
+    const stopButton = document.getElementById('stop');
+    const status = document.getElementById('status');
+    const returnOrigin = new URLSearchParams(window.location.search).get('returnOrigin');
+    let isScanning = false;
+
+    function setControls(scanning) {
+      startButton.style.display = scanning ? 'none' : 'block';
+      stopButton.style.display = scanning ? 'block' : 'none';
+      scanner.style.display = scanning ? 'block' : 'none';
+    }
+
+    function stopScanner() {
+      if (isScanning) {
+        Quagga.stop();
+        isScanning = false;
+      }
+      scanner.innerHTML = '';
+      setControls(false);
+    }
+
+    function sendBarcode(code) {
+      if (!returnOrigin || !window.opener) {
+        status.textContent = '読み取りました：' + code + '。元のSmartInventory画面からもう一度開いてください。';
+        return;
+      }
+      window.opener.postMessage({ type: 'smartinventory:barcode', code: code }, returnOrigin);
+      status.textContent = '読み取りました。元のSmartInventory画面へ戻ってください。';
+    }
+
+    function handleDetected(result) {
+      if (!isScanning || !result.codeResult || !result.codeResult.code) return;
+      const code = result.codeResult.code;
+      stopScanner();
+      sendBarcode(code);
+    }
+
+    startButton.addEventListener('click', () => {
+      if (!window.Quagga) {
+        status.textContent = '読取機能を読み込めませんでした。通信状態を確認してください。';
+        return;
+      }
+      status.textContent = 'カメラを起動しています。';
+      Quagga.init({
+        inputStream: {
+          type: 'LiveStream',
+          target: scanner,
+          constraints: { facingMode: { ideal: 'environment' } }
+        },
+        locator: { patchSize: 'medium', halfSample: true },
+        decoder: { readers: ['ean_reader', 'ean_8_reader'] },
+        locate: true
+      }, (error) => {
+        if (error) {
+          status.textContent = 'カメラを起動できませんでした：' + (error.message || error);
+          return;
+        }
+        isScanning = true;
+        setControls(true);
+        Quagga.start();
+        status.textContent = 'バーコードを枠内に映してください。';
+      });
+    });
+
+    stopButton.addEventListener('click', () => {
+      stopScanner();
+      status.textContent = '読み取りを停止しました。';
+    });
+
+    if (window.Quagga) Quagga.onDetected(handleDetected);
+  </script>
+</body>
+</html>
