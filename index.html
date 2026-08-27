@@ -36,6 +36,7 @@
     const stopButton = document.getElementById('stop');
     const status = document.getElementById('status');
     const returnOrigin = new URLSearchParams(window.location.search).get('returnOrigin');
+    const returnUrl = new URLSearchParams(window.location.search).get('returnUrl');
     let isScanning = false;
 
     function setControls(scanning) {
@@ -53,14 +54,71 @@
       setControls(false);
     }
 
+    function getReturnUrl(code) {
+      if (!returnUrl) return null;
+      try {
+        const target = new URL(returnUrl);
+        const isSmartInventoryUrl = target.origin === 'https://script.google.com'
+          && /^\/macros\/s\/[^/]+\/exec$/.test(target.pathname);
+        if (!isSmartInventoryUrl) return null;
+        target.searchParams.set('scannedJan', code);
+        return target.toString();
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function cameraErrorMessage(error) {
+      const errorName = error && error.name ? error.name : '';
+      if (errorName === 'NotAllowedError' || errorName === 'PermissionDeniedError') {
+        return 'カメラの利用が許可されていません。ブラウザのアドレスバーの鍵アイコン、またはスマホの設定から、このサイトのカメラを「許可」にしてから再度お試しください。';
+      }
+      if (errorName === 'NotFoundError') {
+        return '使用できるカメラが見つかりませんでした。カメラ搭載端末でお試しください。';
+      }
+      return 'カメラを起動できませんでした：' + ((error && error.message) || error || '不明なエラー');
+    }
+
+    async function confirmCameraPermission() {
+      if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('このブラウザではカメラを安全に利用できません。最新版のChromeまたはSafariでお試しください。');
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false
+      });
+      stream.getTracks().forEach((track) => track.stop());
+    }
+
     function sendBarcode(code) {
-      if (!returnOrigin || !window.opener) {
-        status.textContent = '読み取りました：' + code + '。元のSmartInventory画面からもう一度開いてください。';
+      const fallbackUrl = getReturnUrl(code);
+      let sentToOpener = false;
+
+      if (returnOrigin && window.opener) {
+        try {
+          window.opener.postMessage({ type: 'smartinventory:barcode', code: code }, returnOrigin);
+          sentToOpener = true;
+        } catch (_) {
+          sentToOpener = false;
+        }
+      }
+
+      if (sentToOpener) {
+        status.textContent = '読み取りました。元のSmartInventory画面へ自動で戻ります。';
+        window.setTimeout(() => window.close(), 100);
+        if (fallbackUrl) {
+          window.setTimeout(() => window.location.replace(fallbackUrl), 1000);
+        }
         return;
       }
-      window.opener.postMessage({ type: 'smartinventory:barcode', code: code }, returnOrigin);
-      status.textContent = '読み取りました。元のSmartInventory画面へ自動で戻ります。';
-      window.setTimeout(() => window.close(), 700);
+
+      if (fallbackUrl) {
+        status.textContent = '読み取りました。SmartInventory画面へ戻ります。';
+        window.setTimeout(() => window.location.replace(fallbackUrl), 300);
+        return;
+      }
+
+      status.textContent = '読み取りました：' + code + '。元のSmartInventory画面からもう一度開いてください。';
     }
 
     function handleDetected(result) {
@@ -70,31 +128,39 @@
       sendBarcode(code);
     }
 
-    startButton.addEventListener('click', () => {
+    startButton.addEventListener('click', async () => {
       if (!window.Quagga) {
         status.textContent = '読取機能を読み込めませんでした。通信状態を確認してください。';
         return;
       }
-      status.textContent = 'カメラを起動しています。';
-      Quagga.init({
-        inputStream: {
-          type: 'LiveStream',
-          target: scanner,
-          constraints: { facingMode: { ideal: 'environment' } }
-        },
-        locator: { patchSize: 'medium', halfSample: true },
-        decoder: { readers: ['ean_reader', 'ean_8_reader'] },
-        locate: true
-      }, (error) => {
-        if (error) {
-          status.textContent = 'カメラを起動できませんでした：' + (error.message || error);
-          return;
-        }
-        isScanning = true;
-        setControls(true);
-        Quagga.start();
-        status.textContent = 'バーコードを枠内に映してください。';
-      });
+
+      try {
+        status.textContent = 'カメラの利用許可を確認しています。';
+        await confirmCameraPermission();
+        status.textContent = 'カメラを起動しています。';
+
+        Quagga.init({
+          inputStream: {
+            type: 'LiveStream',
+            target: scanner,
+            constraints: { facingMode: { ideal: 'environment' } }
+          },
+          locator: { patchSize: 'medium', halfSample: true },
+          decoder: { readers: ['ean_reader', 'ean_8_reader'] },
+          locate: true
+        }, (error) => {
+          if (error) {
+            status.textContent = cameraErrorMessage(error);
+            return;
+          }
+          isScanning = true;
+          setControls(true);
+          Quagga.start();
+          status.textContent = 'バーコードを枠内に映してください。';
+        });
+      } catch (error) {
+        status.textContent = cameraErrorMessage(error);
+      }
     });
 
     stopButton.addEventListener('click', () => {
