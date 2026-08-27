@@ -59,7 +59,8 @@
         return;
       }
       window.opener.postMessage({ type: 'smartinventory:barcode', code: code }, returnOrigin);
-      status.textContent = '読み取りました。元のSmartInventory画面へ戻ってください。';
+      status.textContent = '読み取りました。元のSmartInventory画面へ自動で戻ります。';
+      window.setTimeout(() => window.close(), 700);
     }
 
     function handleDetected(result) {
