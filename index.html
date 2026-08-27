@@ -6,8 +6,9 @@
   <title>SmartInventory — JANコード読取</title>
   <style>
     :root { color: #24322a; font-family: system-ui, -apple-system, sans-serif; }
-    body { max-width: 540px; margin: 0 auto; padding: 24px 18px 40px; background: #f6faf6; }
-    main { padding: 22px; border-radius: 16px; background: #fff; box-shadow: 0 4px 18px #18352218; }
+    html, body { min-height: 100%; margin: 0; }
+    body { background: #f6faf6; }
+    main { box-sizing: border-box; min-height: 100vh; padding: clamp(24px, 7vw, 80px); background: #fff; }
     h1 { margin: 0; font-size: 1.4rem; } p { color: #526159; line-height: 1.6; }
     button { width: 100%; margin-top: 12px; padding: 13px; border: 0; border-radius: 9px; background: #23734d; color: #fff; font: inherit; font-weight: 700; }
     button.secondary { display: none; background: #6b5142; }
