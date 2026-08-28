@@ -37,6 +37,7 @@
     const status = document.getElementById('status');
     const returnOrigin = new URLSearchParams(window.location.search).get('returnOrigin');
     const returnUrl = new URLSearchParams(window.location.search).get('returnUrl');
+    const CAMERA_PERMISSION_CONFIRMED_KEY = 'smartinventory-camera-permission-confirmed';
     let isScanning = false;
 
     function setControls(scanning) {
@@ -85,6 +86,30 @@
         return (await navigator.permissions.query({ name: 'camera' })).state;
       } catch (_) {
         return 'prompt';
+      }
+    }
+
+    function hasConfirmedCameraPermission() {
+      try {
+        return window.localStorage.getItem(CAMERA_PERMISSION_CONFIRMED_KEY) === 'true';
+      } catch (_) {
+        return false;
+      }
+    }
+
+    function saveCameraPermissionConfirmation() {
+      try {
+        window.localStorage.setItem(CAMERA_PERMISSION_CONFIRMED_KEY, 'true');
+      } catch (_) {
+        // プライベートブラウズなど、保存できない環境では何もしません。
+      }
+    }
+
+    function clearCameraPermissionConfirmation() {
+      try {
+        window.localStorage.removeItem(CAMERA_PERMISSION_CONFIRMED_KEY);
+      } catch (_) {
+        // 保存できない環境では何もしません。
       }
     }
 
@@ -145,9 +170,10 @@
 
       try {
         const permissionState = await getCameraPermissionState();
-        if (permissionState !== 'granted') {
+        if (permissionState !== 'granted' && !hasConfirmedCameraPermission()) {
           status.textContent = 'カメラの利用許可を確認しています。';
           await confirmCameraPermission();
+          saveCameraPermissionConfirmation();
         }
         status.textContent = 'カメラを起動しています。';
 
@@ -162,6 +188,7 @@
           locate: true
         }, (error) => {
           if (error) {
+            clearCameraPermissionConfirmation();
             status.textContent = cameraErrorMessage(error);
             return;
           }
@@ -171,6 +198,7 @@
           status.textContent = 'バーコードを枠内に映してください。';
         });
       } catch (error) {
+        clearCameraPermissionConfirmation();
         status.textContent = cameraErrorMessage(error);
       }
     });
