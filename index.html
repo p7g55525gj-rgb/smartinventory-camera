@@ -25,6 +25,7 @@
     <button id="start" type="button">カメラを起動する</button>
     <button id="stop" class="secondary" type="button">読み取りをやめる</button>
     <div id="scanner" aria-label="バーコード読み取りカメラ"></div>
+    <input id="photo-input" type="file" accept="image/*" capture="environment" hidden>
     <p id="status" role="status">準備ができました。</p>
     <p class="note">このページはJANコードを読み取るだけです。在庫データやGoogleスプレッドシートにはアクセスしません。</p>
   </main>
@@ -35,6 +36,9 @@
     const startButton = document.getElementById('start');
     const stopButton = document.getElementById('stop');
     const status = document.getElementById('status');
+    const photoInput = document.getElementById('photo-input');
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     const returnOrigin = new URLSearchParams(window.location.search).get('returnOrigin');
     const returnUrl = new URLSearchParams(window.location.search).get('returnUrl');
     const CAMERA_PERMISSION_CONFIRMED_KEY = 'smartinventory-camera-permission-confirmed';
@@ -155,6 +159,31 @@
       status.textContent = '読み取りました：' + code + '。元のSmartInventory画面からもう一度開いてください。';
     }
 
+    function readJanFromPhoto(file) {
+      if (!file) return;
+      if (!window.Quagga) {
+        status.textContent = '読取機能を読み込めませんでした。通信状態を確認してください。';
+        return;
+      }
+
+      status.textContent = '撮影したバーコードを読み取っています。';
+      const imageUrl = URL.createObjectURL(file);
+      Quagga.decodeSingle({
+        src: imageUrl,
+        numOfWorkers: 0,
+        locator: { patchSize: 'medium', halfSample: false },
+        decoder: { readers: ['ean_reader', 'ean_8_reader'] },
+        locate: true
+      }, (result) => {
+        URL.revokeObjectURL(imageUrl);
+        if (result && result.codeResult && result.codeResult.code) {
+          sendBarcode(result.codeResult.code);
+          return;
+        }
+        status.textContent = 'JANコードを読み取れませんでした。明るい場所で、バーコード全体が写るようにもう一度撮影してください。';
+      });
+    }
+
     function handleDetected(result) {
       if (!isScanning || !result.codeResult || !result.codeResult.code) return;
       const code = result.codeResult.code;
@@ -163,6 +192,12 @@
     }
 
     startButton.addEventListener('click', async () => {
+      if (isIOS) {
+        photoInput.value = '';
+        photoInput.click();
+        return;
+      }
+
       if (!window.Quagga) {
         status.textContent = '読取機能を読み込めませんでした。通信状態を確認してください。';
         return;
@@ -202,6 +237,13 @@
         status.textContent = cameraErrorMessage(error);
       }
     });
+
+    photoInput.addEventListener('change', () => readJanFromPhoto(photoInput.files && photoInput.files[0]));
+
+    if (isIOS) {
+      startButton.textContent = 'カメラでJANコードを撮影する';
+      status.textContent = 'iPhoneのカメラでバーコードを撮影してください。';
+    }
 
     stopButton.addEventListener('click', () => {
       stopScanner();
