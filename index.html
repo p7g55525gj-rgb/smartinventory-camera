@@ -124,36 +124,47 @@
       stream.getTracks().forEach((track) => track.stop());
     }
 
+    let pendingReturn = null;
+
     function sendBarcode(code) {
       const fallbackUrl = getReturnUrl(code);
-      let sentToOpener = false;
+      const requestId = String(Date.now()) + '-' + Math.random().toString(16).slice(2);
 
+      if (!fallbackUrl) {
+        status.textContent = '読み取りました：' + code + '。元のSmartInventory画面からもう一度開いてください。';
+        return;
+      }
+
+      pendingReturn = { requestId: requestId, fallbackUrl: fallbackUrl };
       if (returnOrigin && window.opener) {
         try {
-          window.opener.postMessage({ type: 'smartinventory:barcode', code: code }, returnOrigin);
-          sentToOpener = true;
+          window.opener.postMessage({
+            type: 'smartinventory:barcode',
+            code: code,
+            requestId: requestId
+          }, returnOrigin);
         } catch (_) {
-          sentToOpener = false;
+          // 受信確認が届かなければ、下の予備経路で登録画面へ戻ります。
         }
       }
 
-      if (sentToOpener) {
-        status.textContent = '読み取りました。元のSmartInventory画面へ自動で戻ります。';
-        window.setTimeout(() => window.close(), 100);
-        if (fallbackUrl) {
-          window.setTimeout(() => window.location.replace(fallbackUrl), 1000);
+      status.textContent = '読み取りました。SmartInventory画面へ戻っています。';
+      window.setTimeout(() => {
+        if (pendingReturn && pendingReturn.requestId === requestId) {
+          pendingReturn = null;
+          window.location.replace(fallbackUrl);
         }
-        return;
-      }
-
-      if (fallbackUrl) {
-        status.textContent = '読み取りました。SmartInventory画面へ戻ります。';
-        window.setTimeout(() => window.location.replace(fallbackUrl), 300);
-        return;
-      }
-
-      status.textContent = '読み取りました：' + code + '。元のSmartInventory画面からもう一度開いてください。';
+      }, 900);
     }
+
+    window.addEventListener('message', (event) => {
+      if (event.origin !== returnOrigin || !pendingReturn || !event.data) return;
+      if (event.data.type !== 'smartinventory:barcode-ack'
+          || event.data.requestId !== pendingReturn.requestId) return;
+      pendingReturn = null;
+      status.textContent = '登録画面へ戻ります。';
+      window.setTimeout(() => window.close(), 100);
+    });
 
     function handleDetected(result) {
       if (!isScanning || !result.codeResult || !result.codeResult.code) return;
